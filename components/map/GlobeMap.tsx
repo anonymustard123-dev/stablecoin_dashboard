@@ -202,8 +202,8 @@ export function GlobeMap({
                 onMouseLeave={() => setHoveredTamCompany(null)}
                 className="group relative grid place-items-center rounded-full transition-transform hover:scale-125"
               >
-                <span className="absolute h-5 w-5 rounded-full bg-[#FFBF00]/30 blur-md opacity-70 transition group-hover:opacity-100" />
-                <span className="relative h-2.5 w-2.5 rounded-full border border-white/80 bg-[#FFBF00] shadow-[0_0_18px_rgba(255,191,0,0.65)]" />
+                <span className="absolute h-5 w-5 rounded-full bg-white/30 blur-md opacity-70 transition group-hover:opacity-100" />
+                <span className="relative h-2.5 w-2.5 rounded-full border border-white/80 bg-white shadow-[0_0_18px_rgba(255,255,255,0.65)]" />
               </button>
             </Marker>
           ))}
