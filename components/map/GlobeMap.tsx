@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMap, {
   Marker,
   NavigationControl,
@@ -8,7 +8,11 @@ import ReactMap, {
   MapRef,
 } from 'react-map-gl/mapbox';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { CapturedTamCompany, CityOpportunityGroup } from '@/types';
+import {
+  CapturedTamCompany,
+  CityOpportunityGroup,
+  GeocodedPipelineOpportunity,
+} from '@/types';
 
 const MAPBOX_TOKEN =
   process.env.NEXT_PUBLIC_MAPBOX_TOKEN ??
@@ -19,8 +23,9 @@ interface GlobeMapProps {
   selectedCityId?: string | null;
   onCitySelect: (cityGroup: CityOpportunityGroup) => void;
   onTamCitySelect: (locationKey: string) => void;
-  viewMode: 'pipeline' | 'tam';
+  viewMode: 'pipeline' | 'tam' | 'owner';
   tamData: CapturedTamCompany[];
+  selectedOpportunity?: GeocodedPipelineOpportunity | null;
 }
 
 type DisplayWhitespaceCompany = CapturedTamCompany & {
@@ -35,6 +40,7 @@ export function GlobeMap({
   onTamCitySelect,
   viewMode,
   tamData,
+  selectedOpportunity,
 }: GlobeMapProps) {
   const mapRef = useRef<MapRef>(null);
   const [selectedTamCompany, setSelectedTamCompany] =
@@ -73,6 +79,16 @@ export function GlobeMap({
       });
   }, [pipelineLocationKeys, tamData]);
   const activeTamCompany = hoveredTamCompany ?? selectedTamCompany;
+
+  useEffect(() => {
+    if (!selectedOpportunity) return;
+
+    mapRef.current?.flyTo({
+      center: [selectedOpportunity.longitude, selectedOpportunity.latitude],
+      zoom: 5.2,
+      duration: 900,
+    });
+  }, [selectedOpportunity]);
 
   const handleCityClick = (cityGroup: CityOpportunityGroup) => {
     onCitySelect(cityGroup);
@@ -248,7 +264,11 @@ export function GlobeMap({
 
       <div className="pointer-events-none absolute left-6 top-6 z-20 rounded-2xl border border-bny-primary/25 bg-bny-navy/85 px-5 py-4 backdrop-blur-xl">
         <div className="text-xs font-semibold uppercase tracking-[0.28em] text-bny-primary">
-          {viewMode === 'tam' ? 'Market Whitespace Map' : 'City Pipeline Map'}
+          {viewMode === 'tam'
+            ? 'Market Whitespace Map'
+            : viewMode === 'owner'
+              ? 'Owner Pipeline Map'
+              : 'City Pipeline Map'}
         </div>
         <div className="mt-1 text-sm text-white/75">
           {viewMode === 'tam'

@@ -10,6 +10,7 @@ import {
   DollarSign,
   Globe2,
   MapPin,
+  UserRound,
   TrendingUp,
 } from 'lucide-react';
 import { GlobeMap } from '@/components/map/GlobeMap';
@@ -82,7 +83,7 @@ const defaultStageColors = {
 const getStageColors = (stage: string) =>
   stageColorMap[stage as keyof typeof stageColorMap] ?? defaultStageColors;
 
-type ViewMode = 'pipeline' | 'tam';
+type ViewMode = 'pipeline' | 'tam' | 'owner';
 
 export function PipelineDashboard() {
   const [opportunities, setOpportunities] = useState<PipelineOpportunity[]>([]);
@@ -93,6 +94,7 @@ export function PipelineDashboard() {
   const [viewMode, setViewMode] = useState<ViewMode>('pipeline');
   const [statusFilter, setStatusFilter] = useState('All');
   const [ownerFilter, setOwnerFilter] = useState('All');
+  const [ownerViewFilter, setOwnerViewFilter] = useState('All');
   const [minimumProbability, setMinimumProbability] = useState(0);
   const [selectedLocationKey, setSelectedLocationKey] = useState<string | null>(
     null
@@ -192,6 +194,16 @@ export function PipelineDashboard() {
     [opportunities]
   );
 
+  const ownerViewOpportunities = useMemo(
+    () =>
+      ownerViewFilter === 'All'
+        ? geocodedOpportunities
+        : geocodedOpportunities.filter(
+            (opportunity) => opportunity.Owner === ownerViewFilter
+          ),
+    [geocodedOpportunities, ownerViewFilter]
+  );
+
   const filteredOpportunities = useMemo(
     () =>
       opportunities.filter((opportunity) => {
@@ -222,6 +234,14 @@ export function PipelineDashboard() {
     [filteredGeocodedOpportunities]
   );
 
+  const displayedCityGroups = useMemo(
+    () =>
+      viewMode === 'owner'
+        ? groupOpportunitiesByCity(geocodedOpportunities)
+        : cityGroups,
+    [cityGroups, geocodedOpportunities, viewMode]
+  );
+
   const capturedTamData = useMemo<CapturedTamCompany[]>(() => {
     const pipelineClients = new Set(
       opportunities.map((opportunity) => opportunity.Client.trim().toLowerCase())
@@ -242,12 +262,12 @@ export function PipelineDashboard() {
 
   const selectedCity = useMemo(
     () =>
-      cityGroups.find((group) =>
+      displayedCityGroups.find((group) =>
         group.opportunities.some(
           (opportunity) => opportunity.locationKey === selectedLocationKey
         )
       ) ?? null,
-    [cityGroups, selectedLocationKey]
+    [displayedCityGroups, selectedLocationKey]
   );
 
   const selectedWhitespaceCompanies = useMemo(
@@ -291,18 +311,30 @@ export function PipelineDashboard() {
   useEffect(() => {
     if (!selectedOpportunity) return;
 
-    const selectedStillVisible = filteredGeocodedOpportunities.some(
+    const visibleOpportunities =
+      viewMode === 'owner' ? geocodedOpportunities : filteredGeocodedOpportunities;
+    const selectedStillVisible = visibleOpportunities.some(
       (opportunity) => opportunity['Oppty ID'] === selectedOpportunity['Oppty ID']
     );
 
     if (!selectedStillVisible) {
       setSelectedOpportunity(null);
     }
-  }, [filteredGeocodedOpportunities, selectedOpportunity]);
+  }, [
+    filteredGeocodedOpportunities,
+    geocodedOpportunities,
+    selectedOpportunity,
+    viewMode,
+  ]);
 
   const handleCitySelect = (cityGroup: CityOpportunityGroup) => {
     setSelectedLocationKey(cityGroup.opportunities[0]?.locationKey ?? cityGroup.id);
     setSelectedOpportunity(null);
+  };
+
+  const handleOpportunitySelect = (opportunity: GeocodedPipelineOpportunity) => {
+    setSelectedLocationKey(opportunity.locationKey);
+    setSelectedOpportunity(opportunity);
   };
 
   const handleBackToGlobal = () => {
@@ -353,9 +385,25 @@ export function PipelineDashboard() {
             ) : selectedOpportunity ? (
               <OpportunityDetailView
                 opportunity={selectedOpportunity}
-                city={selectedCity}
                 onBack={() => setSelectedOpportunity(null)}
                 onGlobal={handleBackToGlobal}
+                backLabel={
+                  viewMode === 'owner'
+                    ? 'Back to Owner View'
+                    : selectedCity
+                      ? 'Back to City'
+                      : 'Back'
+                }
+              />
+            ) : viewMode === 'owner' ? (
+              <OwnerView
+                owners={owners}
+                ownerFilter={ownerViewFilter}
+                opportunities={ownerViewOpportunities}
+                onOwnerChange={setOwnerViewFilter}
+                onOpportunitySelect={handleOpportunitySelect}
+                onViewModeChange={handleViewModeChange}
+                viewMode={viewMode}
               />
             ) : selectedCity || selectedWhitespaceCompanies.length > 0 ? (
               <CityView
@@ -363,7 +411,7 @@ export function PipelineDashboard() {
                 whitespaceCompanies={selectedWhitespaceCompanies}
                 viewMode={viewMode}
                 onBack={handleBackToGlobal}
-                onOpportunitySelect={setSelectedOpportunity}
+                onOpportunitySelect={handleOpportunitySelect}
               />
             ) : (
               <GlobalView
@@ -392,12 +440,13 @@ export function PipelineDashboard() {
 
         <section className="min-h-0">
           <GlobeMap
-            cityGroups={cityGroups}
+            cityGroups={displayedCityGroups}
             selectedCityId={selectedCity?.id ?? null}
             onCitySelect={handleCitySelect}
             onTamCitySelect={handleTamCitySelect}
             viewMode={viewMode}
             tamData={capturedTamData}
+            selectedOpportunity={selectedOpportunity}
           />
         </section>
       </div>
@@ -672,6 +721,7 @@ interface ViewModeToggleProps {
 function ViewModeToggle({ viewMode, onViewModeChange }: ViewModeToggleProps) {
   const options: Array<{ value: ViewMode; label: string }> = [
     { value: 'pipeline', label: 'Active Pipeline' },
+    { value: 'owner', label: 'Owner View' },
     { value: 'tam', label: 'Market Whitespace (TAM)' },
   ];
 
@@ -680,7 +730,7 @@ function ViewModeToggle({ viewMode, onViewModeChange }: ViewModeToggleProps) {
       <div className="text-xs font-semibold uppercase tracking-[0.24em] text-bny-teal">
         View Mode
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 rounded-full border border-white/10 bg-bny-navy/70 p-1">
+      <div className="mt-3 grid grid-cols-3 gap-2 rounded-[2rem] border border-white/10 bg-bny-navy/70 p-1">
         {options.map((option) => {
           const isActive = viewMode === option.value;
 
@@ -689,7 +739,7 @@ function ViewModeToggle({ viewMode, onViewModeChange }: ViewModeToggleProps) {
               key={option.value}
               type="button"
               onClick={() => onViewModeChange(option.value)}
-              className={`rounded-full px-3 py-2 text-xs font-bold uppercase tracking-[0.12em] transition ${
+              className={`flex min-h-20 items-center justify-center rounded-[1.75rem] px-2 py-3 text-center text-[11px] font-bold uppercase leading-tight tracking-[0.08em] transition ${
                 isActive
                   ? 'bg-bny-primary text-white shadow-glow'
                   : 'text-white/55 hover:bg-white/10 hover:text-white'
@@ -701,6 +751,115 @@ function ViewModeToggle({ viewMode, onViewModeChange }: ViewModeToggleProps) {
         })}
       </div>
     </section>
+  );
+}
+
+interface OwnerViewProps {
+  owners: string[];
+  ownerFilter: string;
+  opportunities: GeocodedPipelineOpportunity[];
+  onOwnerChange: (value: string) => void;
+  onOpportunitySelect: (opportunity: GeocodedPipelineOpportunity) => void;
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
+}
+
+function OwnerView({
+  owners,
+  ownerFilter,
+  opportunities,
+  onOwnerChange,
+  onOpportunitySelect,
+  viewMode,
+  onViewModeChange,
+}: OwnerViewProps) {
+  const ownerLabel = ownerFilter === 'All' ? 'all owners' : ownerFilter;
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.28em] text-bny-teal">
+        <UserRound className="h-4 w-4" />
+        Owner View
+      </div>
+      <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+        Owner Opportunities
+      </h1>
+      <p className="mt-3 text-sm leading-6 text-white/70">
+        Select an owner to see every mapped opportunity they own. Click an
+        opportunity to zoom the map and review the current situation.
+      </p>
+
+      <div className="mt-6">
+        <ViewModeToggle viewMode={viewMode} onViewModeChange={onViewModeChange} />
+      </div>
+
+      <section className="mt-6">
+        <FilterSelect
+          label="Owner"
+          value={ownerFilter}
+          options={owners}
+          onChange={onOwnerChange}
+        />
+      </section>
+
+      <section className="mt-6">
+        <SectionHeading
+          title="Opportunities"
+          detail={`${opportunities.length} for ${ownerLabel}`}
+        />
+        <div className="mt-3 space-y-3">
+          {opportunities.length === 0 ? (
+            <EmptyCitySection message="No mapped opportunities found for this owner." />
+          ) : (
+            opportunities.map((opportunity) => {
+              const stageColors = getStageColors(opportunity.Status);
+
+              return (
+                <button
+                  key={opportunity['Oppty ID']}
+                  type="button"
+                  onClick={() => onOpportunitySelect(opportunity)}
+                  className={`w-full rounded-xl border border-l-4 border-bny-astronaut ${stageColors.border} bg-bny-surface p-4 text-left transition hover:border-bny-primary hover:bg-bny-astronaut`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="truncate text-base font-semibold text-white">
+                        {opportunity.Opportunity || 'Untitled Opportunity'}
+                      </div>
+                      <div className="mt-1 truncate text-sm text-white/60">
+                        {opportunity.Client}
+                      </div>
+                    </div>
+                    <div
+                      className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ${stageColors.badge}`}
+                    >
+                      {opportunity.Status || 'Unknown'}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-3 gap-3">
+                    <StatusMetric
+                      label="Bid"
+                      value={formatCompactCurrency(opportunity['Total Bid Value'])}
+                    />
+                    <StatusMetric
+                      label="Probability"
+                      value={`${opportunity.Probability}%`}
+                    />
+                    <StatusMetric
+                      label="Market"
+                      value={`${opportunity['Opportunity City'] || '-'}, ${
+                        opportunity['Opportunity Country'] || '-'
+                      }`}
+                    />
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -884,21 +1043,21 @@ function WhitespaceCard({ company }: { company: CapturedTamCompany }) {
 
 interface OpportunityDetailViewProps {
   opportunity: GeocodedPipelineOpportunity;
-  city: CityOpportunityGroup | null;
   onBack: () => void;
   onGlobal: () => void;
+  backLabel: string;
 }
 
 function OpportunityDetailView({
   opportunity,
-  city,
   onBack,
   onGlobal,
+  backLabel,
 }: OpportunityDetailViewProps) {
   return (
     <div>
       <div className="flex flex-wrap gap-2">
-        <BackButton onClick={onBack}>{city ? 'Back to City' : 'Back'}</BackButton>
+        <BackButton onClick={onBack}>{backLabel}</BackButton>
         <button
           type="button"
           onClick={onGlobal}
@@ -943,11 +1102,11 @@ function OpportunityDetailView({
         <DetailMetric label="Oppty ID" value={opportunity['Oppty ID'] || '-'} />
       </div>
 
-      <div className="mt-6 rounded-xl border border-bny-astronaut bg-bny-surface p-4">
+      <div className="mt-6 rounded-2xl border border-bny-primary/35 bg-bny-surface p-5 shadow-xl shadow-black/20">
         <div className="text-xs font-semibold uppercase tracking-[0.24em] text-bny-teal">
           Current Situation
         </div>
-        <p className="mt-3 text-sm leading-6 text-white/75">
+        <p className="mt-4 whitespace-pre-line text-base leading-7 text-white/85">
           {opportunity['Current Situation'] || 'No current situation provided.'}
         </p>
       </div>
